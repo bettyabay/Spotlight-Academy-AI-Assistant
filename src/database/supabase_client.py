@@ -101,6 +101,36 @@ class SupabaseClient:
         except Exception as e:
             logger.error(f"Error searching similar content: {str(e)}")
             raise
+
+    def search_keyword(self, query: str, top_k: int = 8, filters: dict = None):
+        """
+        Simple keyword-based search as a fallback when vector search fails.
+
+        Uses ILIKE on the content field to approximate keyword search.
+        """
+        try:
+            q = self.client.table("course_content").select("*")
+
+            # Basic keyword search on content
+            if query:
+                # Surround with % for substring match
+                q = q.ilike("content", f"%{query}%")
+
+            # Optional filters for module/chapter/lesson
+            if filters:
+                if "module" in filters:
+                    q = q.eq("module", filters["module"])
+                if "chapter" in filters:
+                    q = q.eq("chapter", filters["chapter"])
+                if "lesson" in filters:
+                    q = q.eq("lesson", filters["lesson"])
+
+            # Order by created_at desc as a simple heuristic, limit top_k
+            result = q.order("created_at", desc=True).limit(top_k).execute()
+            return result.data or []
+        except Exception as e:
+            logger.error(f"Error performing keyword search: {str(e)}")
+            raise
     
     def delete_by_source(self, source_file: str):
         """Delete all chunks from a specific source file (for re-indexing)"""
