@@ -134,7 +134,9 @@ class IngestionPipeline:
         directory_path: str,
         module: str = None,
         chapter: str = None,
-        lesson: str = None
+        lesson: str = None,
+        concept: str = None,
+        version: int = 1,
     ) -> List[Dict]:
         """
         Ingest all supported files from a directory
@@ -144,6 +146,8 @@ class IngestionPipeline:
             module: Module name (optional)
             chapter: Chapter name (optional)
             lesson: Lesson name (optional)
+            concept: Concept name (optional)
+            version: Version number (default: 1)
             
         Returns:
             List of ingestion results
@@ -157,7 +161,10 @@ class IngestionPipeline:
         
         # Find all supported files
         for ext in self.doc_processor.supported_formats:
-            supported_files.extend(directory.glob(f"*{ext}"))
+            supported_files.extend(directory.rglob(f"*{ext}"))
+        
+        # Sort for consistent processing order
+        supported_files = sorted(supported_files)
         
         logger.info(f"Found {len(supported_files)} files to ingest in {directory_path}")
         
@@ -166,7 +173,9 @@ class IngestionPipeline:
                 str(file_path),
                 module=module,
                 chapter=chapter,
-                lesson=lesson
+                lesson=lesson,
+                concept=concept,
+                version=version,
             )
             results.append(result)
         

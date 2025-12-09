@@ -4,7 +4,10 @@ Streamlit admin panel for content ingestion (moved from root app.py).
 
 import logging
 from pathlib import Path
+import shutil
 import sys
+import tempfile
+import zipfile
 
 import streamlit as st
 
@@ -34,6 +37,22 @@ if "pipeline" not in st.session_state:
         st.error(f"❌ Error initializing pipeline: {str(e)}")
         st.info("Please check your .env file and ensure all API keys are configured.")
         st.stop()
+
+def render_ingestion_results(results):
+    """Display ingestion summary and per-file details."""
+    if not results:
+        st.info("No supported files were found in the provided folder.")
+        return
+
+    success_count = sum(1 for r in results if r.get("success"))
+    total_count = len(results)
+    st.success(f"✅ Processed {success_count}/{total_count} files")
+
+    for result in results:
+        status_icon = "✅" if result.get("success") else "❌"
+        label = f"{result.get('file_name', 'Unknown')} - {status_icon}"
+        with st.expander(label):
+            st.json(result)
 
 # Sidebar for configuration
 with st.sidebar:
@@ -97,15 +116,20 @@ with tab1:
                     temp_path.unlink()
 
 with tab2:
-    st.header("Process Directory")
-    st.markdown("Ingest all supported files from a directory.")
+    st.header("Process Directory / Folder")
+    st.markdown(
+        "Process a local directory on the server or upload a zipped folder to ingest "
+        "all supported files (PDF, DOCX, PPTX, PNG, JPG, JPEG). Subfolders are scanned automatically."
+    )
 
+    # Option 1: process an existing directory on the server
+    st.subheader("Use a server directory path")
     directory_path = st.text_input(
         "Directory Path",
         help="Enter the full path to the directory containing course materials",
     )
 
-    if st.button("🚀 Process Directory", type="primary"):
+    if st.button("🚀 Process Directory", type="primary", key="process_directory"):
         if not directory_path:
             st.warning("Please enter a directory path")
         else:
@@ -116,23 +140,65 @@ with tab2:
                         module=module or None,
                         chapter=chapter or None,
                         lesson=lesson or None,
+                        concept=concept or None,
+                        version=int(version),
                     )
 
-                # Display results
-                success_count = sum(1 for r in results if r.get("success"))
-                total_count = len(results)
-
-                st.success(f"✅ Processed {success_count}/{total_count} files")
-
-                # Show detailed results
-                for result in results:
-                    status_icon = "✅" if result.get("success") else "❌"
-                    label = f"{result.get('file_name', 'Unknown')} - {status_icon}"
-                    with st.expander(label):
-                        st.json(result)
+                render_ingestion_results(results)
 
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
+
+    st.markdown("---")
+
+    # Option 2: upload a zipped folder and ingest its contents
+    st.subheader("Upload and ingest a zipped folder")
+    uploaded_zip = st.file_uploader(
+        "Upload a .zip file containing your course materials",
+        type=["zip"],
+        help="We will extract the zip to a temporary folder and ingest all supported files inside it.",
+    )
+
+    if uploaded_zip is not None:
+        st.info(f"📦 Uploaded archive: {uploaded_zip.name} ({uploaded_zip.size / 1024:.2f} KB)")
+
+    if st.button("🚀 Ingest Uploaded Folder", type="primary", key="process_zip"):
+        if uploaded_zip is None:
+            st.warning("Please upload a .zip file first.")
+        else:
+            temp_root = Path("temp_uploads")
+            temp_root.mkdir(exist_ok=True)
+            temp_dir = Path(tempfile.mkdtemp(prefix="folder_ingest_", dir=temp_root))
+            zip_path = temp_dir / uploaded_zip.name
+            extract_dir = temp_dir / "extracted"
+
+            try:
+                # Save the uploaded zip
+                with open(zip_path, "wb") as f:
+                    f.write(uploaded_zip.getbuffer())
+
+                # Extract contents
+                extract_dir.mkdir(exist_ok=True)
+                with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                    zip_ref.extractall(extract_dir)
+
+                with st.spinner("Processing uploaded folder..."):
+                    results = st.session_state.pipeline.ingest_directory(
+                        str(extract_dir),
+                        module=module or None,
+                        chapter=chapter or None,
+                        lesson=lesson or None,
+                        concept=concept or None,
+                        version=int(version),
+                    )
+
+                render_ingestion_results(results)
+
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+            finally:
+                # Clean up extracted files
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
 with tab3:
     st.header("Ingestion Status")

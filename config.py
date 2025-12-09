@@ -26,6 +26,9 @@ class Config:
     CHUNK_OVERLAP = 50  # tokens
     MAX_CHUNKS_PER_QUERY = 8
     EMBEDDING_MODEL = "models/embedding-001"  # Google embedding model
+    EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "google")  # google | local
+    LOCAL_EMBEDDING_MODEL = os.getenv("LOCAL_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    LOCAL_EMBEDDING_DIM = int(os.getenv("LOCAL_EMBEDDING_DIM", "384"))
     
     # Content Processing
     SUPPORTED_FORMATS = [".pdf", ".docx", ".pptx", ".png", ".jpg", ".jpeg"]
@@ -40,8 +43,10 @@ class Config:
         required = [
             "SUPABASE_URL",
             "SUPABASE_KEY",
-            "GOOGLE_API_KEY"
         ]
+        # Only require Google key if using Google embeddings
+        if cls.EMBEDDING_PROVIDER.lower() == "google":
+            required.append("GOOGLE_API_KEY")
         missing = [key for key in required if not getattr(cls, key)]
         if missing:
             raise ValueError(f"Missing required configuration: {', '.join(missing)}")
